@@ -24,7 +24,7 @@ class itsm_event():
     def get_logger(self):
         if not os.path.isdir('logs'):
             os.makedirs('logs')
-        formatter = logging.Formatter(u'%(asctime)s [%(levelname)8s] %(message)s')
+        formatter = logging.Formatter(u'%(asctime)s %(levelname)s ==> %(message)s')
         logger = logging.getLogger(__name__)
         logger.setLevel(logging.DEBUG)
         stream_hander = logging.StreamHandler()
@@ -32,7 +32,7 @@ class itsm_event():
         logger.addHandler(stream_hander)
         log_file = os.path.join('logs',self.now.strftime('%Y%m%d.log'))
         file_handler = logging.FileHandler(log_file)
-        formatter = logging.Formatter(u'%(asctime)s [%(levelname)8s] %(message)s')
+        formatter = logging.Formatter(u'%(asctime)s %(levelname)s ==> %(message)s')
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
         return logger
@@ -138,29 +138,40 @@ class itsm_event():
             req_info[opt] = self.cfg.get('message',opt)
         return req_info
 
+    def get_1min_date(self,cdate):
+        cd_t=datetime.datetime.strptime(cdate,'%Y-%m-%d %H:%M:%S')
+        qcd = cd_t - datetime.timedelta(minutes=1)
+        return qcd.strftime('%Y-%m-%d %H:%M:%S')
+
     def get_cdate(self):
         cd = self.now - datetime.timedelta(days=1)
         cdate = cd.strftime('%Y-%m-%d %H:%M:%S')
         if os.path.isfile(self.c_file):
             with open(self.c_file) as f:
                 cdate = f.read()
-        return cdate
+        qcdate = self.get_1min_date(cdate)
+        #date 변수 셋팅
+        self.set_cdate()
+        return qcdate,cdate
 
     def set_cdate(self):
         with open(self.c_file,'w') as fw:
             fw.write(self.now.strftime('%Y-%m-%d %H:%M:%S'))
         print('check date  : ',self.now.strftime('%Y-%m-%d %H:%M:%S'))
 
+    def get_log_str(self):
+        log_file = os.path.join('logs',self.now.strftime('%Y%m%d.log'))
+        with open(log_file) as f:
+            log_str = f.read()
+        return log_str
+
     def main(self):
-
-
-
         yd_date = self.now - datetime.timedelta(days=1)
         yd = yd_date.strftime('%Y-%m-%d')
         td = self.now.strftime('%Y-%m-%d')
-        cd = self.get_cdate()
-        evt_list = self.get_evt_list(yd, td, cd)
-        self.flogger.info('yd : {}, td: {}, cd: {}, count:{}'.format(yd, td, cd, str(len(evt_list))))
+        qcd,cd = self.get_cdate()
+        evt_list = self.get_evt_list(yd, td, qcd)
+
         print('event count :',len(evt_list))
         """
         KB ITSM
@@ -185,7 +196,8 @@ class itsm_event():
 
         """
         req_info = self.get_req()
-
+        self.flogger.debug('yd : {}, td: {}, cd: {}, qcd: {}, count:{}'.format(yd, td, cd, qcd, str(len(evt_list))))
+        log_str = self.get_log_str()
         for evt in evt_list:
             """
             evt 
@@ -218,9 +230,12 @@ class itsm_event():
                                                                                     REQ_SRC2=pgm_name,
                                                                                     REQ_DEV=dev_key,
                                                                                     MSG_TXT=desc)
-            self.flogger.info(msg)
-            self.send(msg)
-        self.set_cdate()
+            if msg in log_str:
+                self.flogger.error('dup mag : {}'.format(msg))
+            else:
+                self.flogger.info(msg)
+                self.send(msg)
+        # self.set_cdate()
         print('-'*50)
 
 if __name__=='__main__':
